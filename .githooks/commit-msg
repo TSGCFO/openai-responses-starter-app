@@ -1,0 +1,20 @@
+#!/bin/sh
+# Prepend @claude to commit messages if not already present
+
+commit_msg_file=$1
+commit_msg=$(cat "$commit_msg_file")
+
+# Skip if this is a merge commit
+if echo "$commit_msg" | grep -q "^Merge"; then
+    exit 0
+fi
+
+# Skip if this is a revert commit
+if echo "$commit_msg" | grep -q "^Revert"; then
+    exit 0
+fi
+
+# Check if @claude is already at the beginning
+if ! echo "$commit_msg" | grep -q "^@claude"; then
+    echo "@claude $commit_msg" > "$commit_msg_file"
+fi

@@ -1,0 +1,100 @@
+name: Prepend @claude to PRs and Issues
+
+on:
+  pull_request:
+    types: [opened, edited]
+  issues:
+    types: [opened, edited]
+
+jobs:
+  prepend-claude:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+      contents: read
+    
+    steps:
+      - name: Prepend @claude to PR
+        if: github.event.pull_request && github.event.action != 'synchronize'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { title, body } = context.payload.pull_request;
+            
+            let newTitle = title;
+            let newBody = body || '';
+            let updated = false;
+            
+            // Prepend @claude to title if not present
+            if (!title.startsWith('@claude')) {
+              newTitle = `@claude ${title}`;
+              updated = true;
+            }
+            
+            // Prepend @claude to body if not present and body is not empty
+            if (newBody && !newBody.startsWith('@claude')) {
+              newBody = `@claude ${newBody}`;
+              updated = true;
+            } else if (!newBody) {
+              newBody = '@claude';
+              updated = true;
+            }
+            
+            // Update PR if changes needed
+            if (updated) {
+              try {
+                await github.rest.pulls.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: context.payload.pull_request.number,
+                  title: newTitle,
+                  body: newBody
+                });
+                console.log('Successfully updated PR with @claude prefix');
+              } catch (error) {
+                console.error('Failed to update PR:', error);
+              }
+            }
+      
+      - name: Prepend @claude to Issue
+        if: github.event.issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { title, body } = context.payload.issue;
+            
+            let newTitle = title;
+            let newBody = body || '';
+            let updated = false;
+            
+            // Prepend @claude to title if not present
+            if (!title.startsWith('@claude')) {
+              newTitle = `@claude ${title}`;
+              updated = true;
+            }
+            
+            // Prepend @claude to body if not present and body is not empty
+            if (newBody && !newBody.startsWith('@claude')) {
+              newBody = `@claude ${newBody}`;
+              updated = true;
+            } else if (!newBody) {
+              newBody = '@claude';
+              updated = true;
+            }
+            
+            // Update issue if changes needed
+            if (updated) {
+              try {
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.payload.issue.number,
+                  title: newTitle,
+                  body: newBody
+                });
+                console.log('Successfully updated Issue with @claude prefix');
+              } catch (error) {
+                console.error('Failed to update Issue:', error);
+              }
+            }
