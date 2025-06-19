@@ -146,7 +146,8 @@ export const getTools = () => {
     tools.push(mcpTool);
   });
 
-  console.log("tools", tools);
+  console.log("Generated tools:", tools);
+  console.log("Total tools count:", tools.length);
 
   return tools;
 };
