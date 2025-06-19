@@ -1,154 +1,287 @@
-import { MODEL, DEVELOPER_PROMPT } from "@/config/constants";
-import { NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import OpenAI from "openai";
+import { DEVELOPER_PROMPT } from "@/config/constants";
 import { getOriginalMcpConfiguration } from "@/config/mcp-server-integration";
 
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
-interface ResponsesAPIMessage {
-  role: "system" | "user" | "assistant";
-  content: Array<{ type: "input_text"; text: string }>;
-}
-
-// Get MCP server tools configuration from the integration config
-function getMcpServerTools(): any[] {
-  return getOriginalMcpConfiguration();
+// Convert MCP server configuration to OpenAI tools format
+function getMcpServerTools() {
+  const mcpConfig = getOriginalMcpConfiguration();
+  const tools: any[] = [];
+  
+  mcpConfig.forEach(config => {
+    if (config.type === "mcp" && config.allowed_tools) {
+      config.allowed_tools.forEach(toolName => {
+        if (toolName === "resolve-library-id") {
+          tools.push({
+            type: "function",
+            name: "resolve_library_id",
+            description: "Resolves a package/product name to a Context7-compatible library ID",
+            parameters: {
+              type: "object",
+              properties: {
+                libraryName: {
+                  type: "string",
+                  description: "Library name to search for and retrieve a Context7-compatible library ID"
+                }
+              },
+              required: ["libraryName"]
+            }
+          });
+        } else if (toolName === "get-library-docs") {
+          tools.push({
+            type: "function",
+            name: "get_library_docs",
+            description: "Fetches up-to-date documentation for a library using Context7-compatible library ID",
+            parameters: {
+              type: "object",
+              properties: {
+                context7CompatibleLibraryID: {
+                  type: "string",
+                  description: "Exact Context7-compatible library ID (e.g., '/mongodb/docs', '/vercel/next.js')"
+                },
+                topic: {
+                  type: "string",
+                  description: "Topic to focus documentation on (e.g., 'hooks', 'routing')"
+                },
+                tokens: {
+                  type: "number",
+                  description: "Maximum number of tokens of documentation to retrieve (default: 10000)"
+                }
+              },
+              required: ["context7CompatibleLibraryID"]
+            }
+          });
+        }
+      });
+    }
+  });
+  
+  return tools;
 }
 
 // Convert chat messages to Responses API input format
-function convertMessagesToInput(messages: any[]): ResponsesAPIMessage[] {
-  const input: ResponsesAPIMessage[] = [];
+function convertMessagesToInput(messages: any[]) {
+  // Combine all messages into a single input string
+  let combinedInput = "";
   
-  // Add system prompt as first message
-  input.push({
-    role: "system",
-    content: [{ type: "input_text", text: DEVELOPER_PROMPT }]
-  });
-  
-  // Convert user/assistant messages
-  messages.forEach((message) => {
-    if (message.role === "user" || message.role === "assistant") {
-      const textContent = typeof message.content === "string" ? message.content : JSON.stringify(message.content);
-      input.push({
-        role: message.role,
-        content: [{ type: "input_text", text: textContent }]
-      });
+  messages.forEach(message => {
+    if (message.role === "system") {
+      combinedInput += `System: ${message.content}\n\n`;
+    } else if (message.role === "user") {
+      combinedInput += `User: ${message.content}\n\n`;
+    } else if (message.role === "assistant") {
+      combinedInput += `Assistant: ${message.content}\n\n`;
     }
   });
   
-  return input;
+  return combinedInput.trim();
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const { messages, tools } = await request.json();
+    const { messages, tools = [] } = await request.json();
     console.log("Received messages:", messages);
     
-    // Validate tools array to prevent OpenAI API errors
-    if (tools && Array.isArray(tools)) {
-      console.log("Tools array:", JSON.stringify(tools, null, 2));
-      
-      // Check for potential issues in tools array
-      tools.forEach((tool, index) => {
-        if (tool.type === "file_search" && tool.vector_store_ids) {
-          const invalidIds = tool.vector_store_ids.filter((id: string | null | undefined) => id == null || id === "");
-          if (invalidIds.length > 0) {
-            console.error(`Invalid vector store IDs found in tool[${index}]:`, invalidIds);
-            throw new Error(`Invalid vector store IDs in tool[${index}]: expected strings, got null/undefined/empty values`);
-          }
-        }
-      });
-    }
-
-    const openai = new OpenAI();
-
+    // Get MCP server tools
+    const mcpTools = getMcpServerTools();
+    const allTools = [...tools, ...mcpTools];
+    
+    console.log("Available tools:", allTools.length, "tools");
+    
     // Convert messages to Responses API input format
-    const input = convertMessagesToInput(messages);
+    const systemMessage = { role: "system", content: DEVELOPER_PROMPT };
+    const allMessages = [systemMessage, ...messages];
+    const input = convertMessagesToInput(allMessages);
     
-    // Combine existing tools with MCP server tools for full integration
-    const mcpServerTools = getMcpServerTools();
-    const allTools = [...(tools || []), ...mcpServerTools];
-    
-    console.log("Using Responses API with MCP server integration");
-    console.log("Input format:", JSON.stringify(input, null, 2));
-    console.log("Tools (including MCP servers):", JSON.stringify(allTools, null, 2));
-
-    // Use OpenAI Responses API (required for MCP server support)
-    const response = await openai.responses.create({
-      model: "gpt-4.1", // Use gpt-4.1 as required by Responses API for MCP
+    // Create streaming response using Responses API
+    const stream = await openai.responses.create({
+      model: 'gpt-4o',
       input: input,
       tools: allTools.length > 0 ? allTools : undefined,
-      store: true, // Enable response storage for MCP servers
+      store: true,
+      stream: true,
     });
 
-    console.log("Received response from OpenAI Responses API:", response);
-
-    // Handle the Responses API output structure
-    let responseText = "";
-    const toolCalls: any[] = [];
-    
-    if (response.output && Array.isArray(response.output)) {
-      response.output.forEach((item: any) => {
-        if (item.type === "message") {
-          // Extract text from message content
-          if (item.content && Array.isArray(item.content)) {
-            item.content.forEach((contentItem: any) => {
-              if (contentItem.type === "text") {
-                responseText += contentItem.text;
-              }
-            });
+    // Create ReadableStream for SSE response
+    const encoder = new TextEncoder();
+    const readableStream = new ReadableStream({
+      async start(controller) {
+        try {
+          for await (const event of stream) {
+            console.log("Stream event:", event.type, event);
+            
+            // Handle events generically and extract relevant data
+            const eventData: any = event;
+            
+            // Handle output item events
+            if (event.type === 'response.output_item.added') {
+              const sseEvent = `data: ${JSON.stringify({
+                event: 'response.output_item.added',
+                data: eventData
+              })}\n\n`;
+              controller.enqueue(encoder.encode(sseEvent));
+            }
+            
+            else if (event.type === 'response.output_item.done') {
+              const sseEvent = `data: ${JSON.stringify({
+                event: 'response.output_item.done',
+                data: {
+                  finish_reason: 'stop'
+                }
+              })}\n\n`;
+              controller.enqueue(encoder.encode(sseEvent));
+            }
+            
+            // Handle content part events
+            else if (event.type === 'response.content_part.added') {
+              const sseEvent = `data: ${JSON.stringify({
+                event: 'response.content_part.added',
+                data: eventData
+              })}\n\n`;
+              controller.enqueue(encoder.encode(sseEvent));
+            }
+            
+            else if (event.type === 'response.content_part.done') {
+              const sseEvent = `data: ${JSON.stringify({
+                event: 'response.content_part.done',
+                data: eventData
+              })}\n\n`;
+              controller.enqueue(encoder.encode(sseEvent));
+            }
+            
+            // Handle reasoning events (if available)
+            else if (event.type.startsWith('response.reasoning')) {
+              const sseEvent = `data: ${JSON.stringify({
+                event: event.type,
+                data: eventData
+              })}\n\n`;
+              controller.enqueue(encoder.encode(sseEvent));
+            }
+            
+            // Handle function call events
+            else if (event.type.startsWith('response.function_call')) {
+              const sseEvent = `data: ${JSON.stringify({
+                event: 'response.tool_calls.delta',
+                data: {
+                  tool_calls: eventData
+                }
+              })}\n\n`;
+              controller.enqueue(encoder.encode(sseEvent));
+            }
+            
+            // Handle completion events
+            else if (event.type === 'response.completed') {
+              const sseEvent = `data: ${JSON.stringify({
+                event: 'response.completed',
+                data: {
+                  usage: eventData.usage || {}
+                }
+              })}\n\n`;
+              controller.enqueue(encoder.encode(sseEvent));
+            }
+            
+            // Handle failure events
+            else if (event.type === 'response.failed') {
+              const sseEvent = `data: ${JSON.stringify({
+                event: 'error',
+                data: { 
+                  error: 'Response failed', 
+                  details: eventData.error?.message || 'Unknown error' 
+                }
+              })}\n\n`;
+              controller.enqueue(encoder.encode(sseEvent));
+            }
+            
+            // Handle any text-related events that contain deltas
+            else if (eventData.delta || eventData.text) {
+              const sseEvent = `data: ${JSON.stringify({
+                event: 'response.output_text.delta',
+                data: {
+                  delta: eventData.delta || eventData.text || '',
+                  item_id: `msg_${Date.now()}`
+                }
+              })}\n\n`;
+              controller.enqueue(encoder.encode(sseEvent));
+            }
+            
+            // Handle any other event types generically
+            else {
+              const sseEvent = `data: ${JSON.stringify({
+                event: event.type,
+                data: eventData
+              })}\n\n`;
+              controller.enqueue(encoder.encode(sseEvent));
+            }
           }
-        } else if (item.type === "function_call") {
-          toolCalls.push(item);
+          
+          // Send final completion marker
+          controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
+          controller.close();
+          
+        } catch (error) {
+          console.error("Streaming error:", error);
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          const errorEvent = `data: ${JSON.stringify({
+            event: 'error',
+            data: { error: 'Streaming failed', details: errorMessage }
+          })}\n\n`;
+          controller.enqueue(encoder.encode(errorEvent));
+          controller.close();
         }
-      });
-    } else if (response.output_text) {
-      responseText = response.output_text;
-    }
-
-    // Convert to chat completion format for compatibility with existing frontend
-    const chatResponse = {
-      id: response.id || "resp_" + Date.now(),
-      object: "chat.completion",
-      created: Math.floor(Date.now() / 1000),
-      model: "gpt-4.1",
-      choices: [{
-        index: 0,
-        message: {
-          role: "assistant",
-          content: responseText,
-          tool_calls: toolCalls.length > 0 ? toolCalls.map(tc => ({
-            id: tc.call_id || tc.id,
-            type: tc.type,
-            function: tc.type === "function_call" ? {
-              name: tc.name,
-              arguments: tc.arguments
-            } : undefined,
-            mcp: tc.type === "mcp" ? {
-              server_label: tc.server_label,
-              tool_name: tc.name,
-              arguments: tc.arguments
-            } : undefined
-          })) : undefined
-        },
-        finish_reason: "stop"
-      }],
-      usage: response.usage || {
-        prompt_tokens: 0,
-        completion_tokens: 0,
-        total_tokens: 0
-      }
-    };
-
-    // Return the complete response with MCP server support
-    return NextResponse.json(chatResponse);
-
-  } catch (error) {
-    console.error("Error in POST handler:", error);
-    return NextResponse.json(
-      {
-        error: error instanceof Error ? error.message : "Unknown error",
       },
-      { status: 500 }
-    );
+    });
+
+    return new Response(readableStream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+      },
+    });
+    
+  } catch (error) {
+    console.error("Error in turn_response:", error);
+    
+    // Return error as SSE format to match frontend expectations
+    const encoder = new TextEncoder();
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorStream = new ReadableStream({
+      start(controller) {
+        const errorEvent = `data: ${JSON.stringify({
+          event: 'error',
+          data: { error: 'Internal server error', details: errorMessage }
+        })}\n\n`;
+        controller.enqueue(encoder.encode(errorEvent));
+        controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
+        controller.close();
+      },
+    });
+
+    return new Response(errorStream, {
+      status: 500,
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
+    });
   }
+}
+
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    },
+  });
 }
