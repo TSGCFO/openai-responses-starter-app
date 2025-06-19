@@ -6,6 +6,22 @@ export async function POST(request: Request) {
   try {
     const { messages, tools } = await request.json();
     console.log("Received messages:", messages);
+    
+    // Validate tools array to prevent OpenAI API errors
+    if (tools && Array.isArray(tools)) {
+      console.log("Tools array:", JSON.stringify(tools, null, 2));
+      
+      // Check for potential issues in tools array
+      tools.forEach((tool, index) => {
+        if (tool.type === "file_search" && tool.vector_store_ids) {
+          const invalidIds = tool.vector_store_ids.filter(id => id == null || id === "");
+          if (invalidIds.length > 0) {
+            console.error(`Invalid vector store IDs found in tool[${index}]:`, invalidIds);
+            throw new Error(`Invalid vector store IDs in tool[${index}]: expected strings, got null/undefined/empty values`);
+          }
+        }
+      });
+    }
 
     const openai = new OpenAI();
 

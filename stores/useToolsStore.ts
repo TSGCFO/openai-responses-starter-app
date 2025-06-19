@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { defaultVectorStore } from "@/config/constants";
+import { McpServerConfig, defaultMcpServers } from "@/config/mcp-servers";
 
 type File = {
   id: string;
@@ -23,6 +24,7 @@ export type WebSearchConfig = {
   };
 };
 
+// Legacy single server config for backward compatibility
 export type McpConfig = {
   server_label: string;
   server_url: string;
@@ -45,10 +47,19 @@ interface StoreState {
   setVectorStore: (store: VectorStore) => void;
   webSearchConfig: WebSearchConfig;
   setWebSearchConfig: (config: WebSearchConfig) => void;
+  
+  // Legacy single server MCP config (maintained for backward compatibility)
   mcpEnabled: boolean;
   setMcpEnabled: (enabled: boolean) => void;
   mcpConfig: McpConfig;
   setMcpConfig: (config: McpConfig) => void;
+  
+  // New multi-server MCP config
+  mcpServers: McpServerConfig[];
+  setMcpServers: (servers: McpServerConfig[]) => void;
+  updateMcpServer: (serverId: string, updates: Partial<McpServerConfig>) => void;
+  toggleMcpServer: (serverId: string) => void;
+  resetMcpServers: () => void;
 }
 
 const useToolsStore = create<StoreState>()(
@@ -69,6 +80,7 @@ const useToolsStore = create<StoreState>()(
         allowed_tools: "",
         skip_approval: true,
       },
+      mcpServers: defaultMcpServers,
       fileSearchEnabled: false,
       previousFileSearchEnabled: false,
       setFileSearchEnabled: (enabled) => {
@@ -94,6 +106,18 @@ const useToolsStore = create<StoreState>()(
       setVectorStore: (store) => set({ vectorStore: store }),
       setWebSearchConfig: (config) => set({ webSearchConfig: config }),
       setMcpConfig: (config) => set({ mcpConfig: config }),
+      setMcpServers: (servers) => set({ mcpServers: servers }),
+      updateMcpServer: (serverId, updates) => set((state) => ({
+        mcpServers: state.mcpServers.map(server =>
+          server.id === serverId ? { ...server, ...updates } : server
+        )
+      })),
+      toggleMcpServer: (serverId) => set((state) => ({
+        mcpServers: state.mcpServers.map(server =>
+          server.id === serverId ? { ...server, enabled: !server.enabled } : server
+        )
+      })),
+      resetMcpServers: () => set({ mcpServers: defaultMcpServers }),
     }),
     {
       name: "tools-store",
