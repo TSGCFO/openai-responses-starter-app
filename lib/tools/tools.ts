@@ -38,11 +38,19 @@ export const getTools = () => {
   }
 
   if (fileSearchEnabled) {
-    const fileSearchTool = {
-      type: "file_search",
-      vector_store_ids: [vectorStore?.id],
-    };
-    tools.push(fileSearchTool);
+    // Filter out null/undefined vector store IDs to prevent OpenAI API errors
+    const validVectorStoreIds = vectorStore?.id ? [vectorStore.id] : [];
+    
+    if (validVectorStoreIds.length > 0) {
+      const fileSearchTool = {
+        type: "file_search",
+        vector_store_ids: validVectorStoreIds,
+      };
+      tools.push(fileSearchTool);
+      console.log("Added file search tool with vector store IDs:", validVectorStoreIds);
+    } else {
+      console.warn("File search enabled but no valid vector store IDs found. Skipping file search tool.");
+    }
   }
 
   if (codeInterpreterEnabled) {
