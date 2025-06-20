@@ -7,56 +7,37 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Convert MCP server configuration to OpenAI tools format
+// Convert MCP server configuration to Responses API MCP tools format
 function getMcpServerTools() {
   const mcpConfig = getOriginalMcpConfiguration();
   const tools: any[] = [];
   
-  mcpConfig.forEach(config => {
+  mcpConfig.forEach((config, index) => {
     if (config.type === "mcp" && config.allowed_tools) {
-      config.allowed_tools.forEach(toolName => {
-        if (toolName === "resolve-library-id") {
-          tools.push({
-            type: "function",
-            name: "resolve_library_id",
-            description: "Resolves a package/product name to a Context7-compatible library ID",
-            parameters: {
-              type: "object",
-              properties: {
-                libraryName: {
-                  type: "string",
-                  description: "Library name to search for and retrieve a Context7-compatible library ID"
-                }
-              },
-              required: ["libraryName"]
-            }
-          });
-        } else if (toolName === "get-library-docs") {
-          tools.push({
-            type: "function",
-            name: "get_library_docs",
-            description: "Fetches up-to-date documentation for a library using Context7-compatible library ID",
-            parameters: {
-              type: "object",
-              properties: {
-                context7CompatibleLibraryID: {
-                  type: "string",
-                  description: "Exact Context7-compatible library ID (e.g., '/mongodb/docs', '/vercel/next.js')"
-                },
-                topic: {
-                  type: "string",
-                  description: "Topic to focus documentation on (e.g., 'hooks', 'routing')"
-                },
-                tokens: {
-                  type: "number",
-                  description: "Maximum number of tokens of documentation to retrieve (default: 10000)"
-                }
-              },
-              required: ["context7CompatibleLibraryID"]
-            }
-          });
-        }
-      });
+      // Validate required MCP tool parameters
+      const missingParams = [];
+      if (!config.server_url) missingParams.push('server_url');
+      if (!config.server_label) missingParams.push('server_label');
+      if (!config.allowed_tools || config.allowed_tools.length === 0) missingParams.push('allowed_tools');
+      if (!config.require_approval) missingParams.push('require_approval');
+      
+      if (missingParams.length > 0) {
+        console.error(`MCP tool at index ${index} missing required parameters:`, missingParams);
+        console.error('Config:', JSON.stringify(config, null, 2));
+        return; // Skip this tool
+      }
+
+      // Add MCP tool in the format expected by Responses API
+      const mcpTool = {
+        type: "mcp",
+        server_label: config.server_label,
+        server_url: config.server_url,
+        allowed_tools: config.allowed_tools,
+        require_approval: config.require_approval
+      };
+      
+      console.log(`Adding MCP tool for ${config.server_label}:`, JSON.stringify(mcpTool, null, 2));
+      tools.push(mcpTool);
     }
   });
   
@@ -90,7 +71,14 @@ export async function POST(request: NextRequest) {
     const mcpTools = getMcpServerTools();
     const allTools = [...tools, ...mcpTools];
     
-    console.log("Available tools:", allTools.length, "tools");
+    console.log("=== TOOLS DEBUG ===");
+    console.log("Regular tools count:", tools.length);
+    console.log("MCP tools count:", mcpTools.length);
+    console.log("Total tools count:", allTools.length);
+    console.log("Regular tools:", JSON.stringify(tools, null, 2));
+    console.log("MCP tools:", JSON.stringify(mcpTools, null, 2));
+    console.log("All tools being sent to API:", JSON.stringify(allTools, null, 2));
+    console.log("=== END TOOLS DEBUG ===");
     
     // Convert messages to Responses API input format
     const systemMessage = { role: "system", content: DEVELOPER_PROMPT };
