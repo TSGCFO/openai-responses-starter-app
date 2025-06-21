@@ -89,8 +89,17 @@ export const handleTurn = async (
     });
 
     if (!response.ok) {
-      console.error(`Error: ${response.status} - ${response.statusText}`);
-      return;
+      let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+      try {
+        const errorData = await response.json();
+        if (errorData.error) {
+          errorMessage += ` - ${errorData.error}`;
+        }
+      } catch {
+        // If we can't parse the error response, use the status text
+      }
+      console.error(`API Error: ${errorMessage}`);
+      throw new Error(errorMessage);
     }
 
     // Reader for streaming data

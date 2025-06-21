@@ -2,6 +2,7 @@
 import React, { useState } from "react";
 import { Button } from "./ui/button";
 import { McpApprovalRequestItem } from "@/lib/assistant";
+import useToolsStore from "@/stores/useToolsStore";
 
 interface Props {
   item: McpApprovalRequestItem;
@@ -10,10 +11,29 @@ interface Props {
 
 export default function McpApproval({ item, onRespond }: Props) {
   const [disabled, setDisabled] = useState(false);
+  const { mcpServers } = useToolsStore();
 
   const handle = (approve: boolean) => {
     setDisabled(true);
     onRespond(approve, item.id);
+  };
+
+  // Find the server configuration to display more detailed information
+  const serverConfig = mcpServers.find(server => server.name === item.server_label);
+  const serverType = serverConfig?.type || 'unknown';
+  const serverDescription = serverConfig?.description || '';
+
+  const getServerTypeIcon = (type: string) => {
+    switch (type) {
+      case 'docker':
+        return '🐳';
+      case 'query_api':
+        return '🗄️';
+      case 'remote_pipedream':
+        return '🔌';
+      default:
+        return '⚙️';
+    }
   };
 
   return (
@@ -21,9 +41,29 @@ export default function McpApproval({ item, onRespond }: Props) {
       <div className="flex">
         <div className="mr-4 rounded-[16px] p-4 md:mr-24 text-black bg-gray-100 font-light">
           <div className="mb-2 text-sm">
-            Request to execute tool{" "}
-            <span className="font-medium">{item.name}</span> on server{" "}
-            <span className="font-medium">{item.server_label}</span>.
+            <div className="flex items-center gap-2 mb-1">
+              <span>{getServerTypeIcon(serverType)}</span>
+              <span>Request to execute tool{" "}
+                <span className="font-medium">{item.name}</span> on server{" "}
+                <span className="font-medium">{item.server_label}</span>
+              </span>
+            </div>
+            {serverDescription && (
+              <div className="text-xs text-gray-600 mb-2">
+                {serverDescription}
+              </div>
+            )}
+            {serverConfig && (
+              <div className="text-xs text-gray-500">
+                Type: {serverType}
+                {serverConfig.type === 'docker' && serverConfig.docker_image && (
+                  <span> • Image: {serverConfig.docker_image}</span>
+                )}
+                {serverConfig.type === 'remote_pipedream' && serverConfig.app_slug && (
+                  <span> • App: {serverConfig.app_slug}</span>
+                )}
+              </div>
+            )}
           </div>
           <div className="flex gap-2">
             <Button size="sm" disabled={disabled} onClick={() => handle(true)}>
