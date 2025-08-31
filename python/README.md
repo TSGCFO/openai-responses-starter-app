@@ -47,18 +47,25 @@ It includes both a **FastAPI web server** and a **command-line interface (CLI)**
 
 ### Option 1: Command Line Interface (CLI)
 
-The CLI provides a rich terminal interface for chatting with the AI:
-
+**Simple CLI (Recommended):**
 ```bash
 source venv/bin/activate
+python simple_cli.py
+```
+
+**Advanced CLI (Responses API):**
+```bash
+source venv/bin/activate  
 python cli.py
 ```
 
 Features:
 - Interactive conversation with markdown rendering
 - Real-time streaming responses
-- Function calling support
+- Function calling support (weather, jokes)
 - Rich terminal formatting
+
+The `simple_cli.py` uses the standard Chat Completions API with function calling, while `cli.py` attempts to use the newer Responses API.
 
 ### Option 2: Web Server (FastAPI)
 

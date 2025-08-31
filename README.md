@@ -7,7 +7,26 @@
 This repository contains a NextJS starter app built on top of the [Responses API](https://platform.openai.com/docs/api-reference/responses).
 It leverages built-in tools ([web search](https://platform.openai.com/docs/guides/tools-web-search?api-mode=responses) and [file search](https://platform.openai.com/docs/guides/tools-file-search)) and implements a chat interface with multi-turn conversation handling.
 
-**🐍 Python Version Available**: A complete Python conversion is available in the `python/` directory with both CLI and web server options. See [python/README.md](python/README.md) for details.
+## 🐍 Python Version Available
+
+A complete Python conversion is available in the `python/` directory with:
+- **FastAPI backend** - HTTP API compatible with the original
+- **Rich CLI interface** - Interactive terminal chat with streaming
+- **Simple web interface** - HTML/JS frontend for browser usage
+- **Same functionality** - All features converted including MCP integration
+
+**Quick Start (Python):**
+```bash
+cd python
+./setup.sh
+# Edit .env file with your OpenAI API key
+source venv/bin/activate
+python simple_cli.py  # For CLI interface
+# OR
+python main.py        # For web server at http://localhost:8000
+```
+
+See [python/README.md](python/README.md) for detailed Python setup and usage instructions.
 
 Features:
 
