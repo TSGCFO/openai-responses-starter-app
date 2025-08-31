@@ -7,6 +7,8 @@
 This repository contains a NextJS starter app built on top of the [Responses API](https://platform.openai.com/docs/api-reference/responses).
 It leverages built-in tools ([web search](https://platform.openai.com/docs/guides/tools-web-search?api-mode=responses) and [file search](https://platform.openai.com/docs/guides/tools-file-search)) and implements a chat interface with multi-turn conversation handling.
 
+**🐍 Python Version Available**: A complete Python conversion is available in the `python/` directory with both CLI and web server options. See [python/README.md](python/README.md) for details.
+
 Features:
 
 - Multi-turn conversation handling
